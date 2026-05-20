@@ -1,0 +1,1667 @@
+<!DOCTYPE html>
+<html lang="km">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RM HENG RESTO - POS System</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Supabase CDN (for multi-device realtime sync) -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#f59e0b',
+                    }
+                }
+            }
+        }
+    </script>
+    <!-- Google Fonts for Khmer -->
+    <link href="https://fonts.googleapis.com/css2?family=Kantumruy+Pro:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --receipt-width: 72mm; /* 72mm fits most 80mm thermal printers */
+            --receipt-cut-space: 14mm; /* extra tail space for manual/auto cut */
+        }
+
+        body {
+            font-family: 'Kantumruy Pro', sans-serif;
+        }
+        @page {
+            size: auto;
+            margin: 3mm;
+        }
+        @media print {
+            body * {
+                visibility: hidden;
+            }
+            #print-receipt-area, #print-receipt-area * {
+                visibility: visible;
+            }
+            #print-receipt-area {
+                display: block !important;
+                position: absolute;
+                left: 0;
+                top: 0;
+                width: var(--receipt-width);
+                margin: 0;
+                background: white !important;
+                color: black !important;
+                padding-bottom: var(--receipt-cut-space);
+            }
+            .no-print {
+                display: none !important;
+            }
+        }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800 dark:bg-slate-950 dark:text-slate-100 transition-colors duration-200">
+
+    <!-- APP WRAPPER -->
+    <div id="app" class="min-h-screen flex flex-col no-print">
+        
+        <!-- HEADER -->
+        <header class="sticky top-0 z-40 px-6 py-4 flex items-center justify-between border-b border-slate-200 dark:border-slate-800 bg-white/95 dark:bg-slate-900/95 backdrop-blur-sm">
+            <div class="flex items-center space-x-3">
+                <div class="h-10 w-10 bg-amber-500 rounded-xl flex items-center justify-center font-bold text-white shadow-md shadow-amber-500/20">
+                    RM
+                </div>
+                <div>
+                    <h1 class="text-lg font-bold tracking-tight text-amber-500">RM HENG RESTO</h1>
+                    <p class="text-xs text-slate-400">WA: +85590878980</p>
+                </div>
+            </div>
+
+            <div class="flex items-center space-x-3">
+                <span id="sync-status" class="hidden sm:inline-flex px-2.5 py-1 rounded-lg text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-500">
+                    Local
+                </span>
+                <!-- Language Toggle -->
+                <button onclick="toggleLanguage()" id="lang-btn" class="px-3 py-1.5 rounded-lg text-xs font-bold border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 text-amber-600 dark:text-amber-400 hover:bg-slate-200 dark:hover:bg-slate-700 transition-all">
+                    🌐 ភាសាខ្មែរ (រៀល ៛)
+                </button>
+
+                <!-- Theme Toggle -->
+                <button onclick="toggleTheme()" class="p-2 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-yellow-400 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors">
+                    <span id="theme-icon">🌙</span>
+                </button>
+            </div>
+        </header>
+
+        <!-- MAIN LAYOUT -->
+        <div class="flex flex-1 flex-col lg:flex-row overflow-hidden">
+            
+            <!-- SIDEBAR NAVIGATION -->
+            <aside class="lg:w-64 flex flex-row lg:flex-col items-stretch border-b lg:border-b-0 lg:border-r border-slate-200 dark:border-slate-800 p-4 space-x-2 lg:space-x-0 lg:space-y-2 overflow-x-auto lg:overflow-x-visible shrink-0 bg-white dark:bg-slate-900">
+                <button onclick="switchTab('pos')" id="tab-pos" class="tab-btn flex items-center space-x-3 px-4 py-3 rounded-xl text-sm font-semibold transition-all whitespace-nowrap lg:w-full bg-amber-500 text-white shadow-lg shadow-amber-500/20">
+                    <span>🛒</span> <span data-key="pos">លក់ (POS)</span>
+                </button>
+                <button onclick="switchTab('kitchen')" id="tab-kitchen" class="tab-btn flex items-center space-x-3 px-4 py-3 rounded-xl text-sm font-semibold transition-all whitespace-nowrap lg:w-full text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800">
+                    <span>🍳</span> <span data-key="kitchen">ផ្ទះបាយ</span>
+                </button>
+                <button onclick="switchTab('dashboard')" id="tab-dashboard" class="tab-btn flex items-center space-x-3 px-4 py-3 rounded-xl text-sm font-semibold transition-all whitespace-nowrap lg:w-full text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800">
+                    <span>📊</span> <span data-key="dashboard">ផ្ទាំងគ្រប់គ្រង</span>
+                </button>
+                <button onclick="switchTab('reports')" id="tab-reports" class="tab-btn flex items-center space-x-3 px-4 py-3 rounded-xl text-sm font-semibold transition-all whitespace-nowrap lg:w-full text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800">
+                    <span>📈</span> <span data-key="reports">របាយការណ៍លក់</span>
+                </button>
+                <button onclick="switchTab('expenses')" id="tab-expenses" class="tab-btn flex items-center space-x-3 px-4 py-3 rounded-xl text-sm font-semibold transition-all whitespace-nowrap lg:w-full text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800">
+                    <span>💸</span> <span data-key="expenses">ការចំណាយ</span>
+                </button>
+                <button onclick="switchTab('menu')" id="tab-menu" class="tab-btn flex items-center space-x-3 px-4 py-3 rounded-xl text-sm font-semibold transition-all whitespace-nowrap lg:w-full text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800">
+                    <span>🍽️</span> <span data-key="menu">មុខម្ហូប</span>
+                </button>
+            </aside>
+
+            <!-- MAIN CONTENT AREA -->
+            <main class="flex-1 p-6 overflow-y-auto relative">
+                
+                <!-- TAB: POS -->
+                <div id="content-pos" class="tab-content grid grid-cols-1 xl:grid-cols-3 gap-6">
+                    <!-- Food Grid -->
+                    <div class="xl:col-span-2 space-y-6">
+                        <div class="flex flex-col md:flex-row gap-4 items-center justify-between">
+                            <div class="flex space-x-2 overflow-x-auto w-full md:w-auto py-1">
+                                <button onclick="setCategory('all')" id="cat-all" class="cat-btn px-4 py-2 rounded-xl text-sm font-semibold bg-amber-500 text-white shadow-lg shadow-amber-500/30 transition-all" data-key="all">ទាំងអស់</button>
+                                <button onclick="setCategory('food')" id="cat-food" class="cat-btn px-4 py-2 rounded-xl text-sm font-semibold bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700 transition-all" data-key="food">អាហារ</button>
+                                <button onclick="setCategory('drink')" id="cat-drink" class="cat-btn px-4 py-2 rounded-xl text-sm font-semibold bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700 transition-all" data-key="drink">ភេសជ្ជៈ</button>
+                                <button onclick="setCategory('dessert')" id="cat-dessert" class="cat-btn px-4 py-2 rounded-xl text-sm font-semibold bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700 transition-all" data-key="dessert">បង្អែម</button>
+                            </div>
+                            <div class="relative w-full md:w-64">
+                                <input type="text" id="search-input" oninput="handleSearch(this.value)" placeholder="ស្វែងរកមុខម្ហូប..." class="w-full pl-10 pr-4 py-2.5 rounded-xl text-sm border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500 text-slate-900 dark:text-white">
+                                <span class="absolute left-3.5 top-3 text-slate-400">🔍</span>
+                            </div>
+                        </div>
+
+                        <div id="food-grid" class="grid grid-cols-2 md:grid-cols-3 gap-4">
+                            <!-- Items inserted by JS -->
+                        </div>
+                    </div>
+
+                    <!-- Cart Sidebar -->
+                    <div id="cart-sidebar" class="fixed inset-y-0 right-0 z-50 w-[90%] sm:w-[400px] p-6 border-l border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex flex-col h-full shadow-2xl translate-x-full transition-transform duration-300 xl:translate-x-0 xl:static xl:w-full xl:h-[calc(100vh-12rem)] xl:shadow-none">
+                        <div class="flex justify-between items-center border-b pb-4 mb-4">
+                            <div class="flex items-center space-x-2">
+                                <span class="text-xl">🛒</span>
+                                <h2 class="font-bold text-base" data-key="cart">កន្ត្រកទំនិញ</h2>
+                            </div>
+                            <div class="flex items-center space-x-2">
+                                <span id="cart-badge-count" class="px-2.5 py-1 text-xs font-extrabold bg-amber-500/10 text-amber-500 rounded-full">0 Items</span>
+                                <button onclick="toggleMobileCart(false)" class="xl:hidden p-2 rounded-xl text-xs font-bold bg-slate-100 dark:bg-slate-800 text-slate-500" data-key="close">បិទ</button>
+                            </div>
+                        </div>
+
+                        <!-- Cart Scrollable List -->
+                        <div id="cart-items-list" class="flex-1 overflow-y-auto space-y-3 pr-1">
+                            <!-- Items inserted by JS -->
+                        </div>
+
+                        <!-- Cart Summary Footer -->
+                        <div class="border-t border-slate-200 dark:border-slate-800 pt-4 mt-4 space-y-3">
+                            <div class="grid grid-cols-2 gap-2">
+                                <div>
+                                    <label class="text-[10px] uppercase font-bold text-slate-400" data-key="tableNo">លេខតុ/កៅអី</label>
+                                    <input type="text" id="table-input" value="01" class="w-full mt-1 p-2 rounded-lg text-xs font-bold border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white focus:outline-none">
+                                </div>
+                                <div>
+                                    <label class="text-[10px] uppercase font-bold text-slate-400" data-key="discount">បញ្ចុះតម្លៃ (%)</label>
+                                    <input type="number" id="discount-input" min="0" max="100" value="0" oninput="updateCartTotals()" class="w-full mt-1 p-2 rounded-lg text-xs font-bold border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white focus:outline-none">
+                                </div>
+                            </div>
+
+                            <div class="space-y-1.5 border-t border-dashed py-3 border-slate-200 dark:border-slate-800">
+                                <div class="flex justify-between text-xs text-slate-400">
+                                    <span data-key="total">សរុប</span>
+                                    <span id="summary-subtotal">0៛</span>
+                                </div>
+                                <div class="flex justify-between text-base font-black text-amber-500 border-t border-dashed border-slate-200 dark:border-slate-800 pt-2">
+                                    <span data-key="grandTotal">សរុបចុងក្រោយ</span>
+                                    <span id="summary-grandtotal">0៛</span>
+                                </div>
+                            </div>
+
+                            <button onclick="openCheckoutModal()" class="w-full py-3 bg-amber-500 text-white rounded-xl font-bold shadow-lg shadow-amber-500/20 hover:bg-amber-600 transition-colors" data-key="checkout">គិតលុយ និងព្រីន</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- TAB: KITCHEN -->
+                <div id="content-kitchen" class="tab-content hidden space-y-6">
+                    <div class="flex justify-between items-center">
+                        <h2 class="text-xl font-bold tracking-tight">🍳 <span data-key="kitchen">ផ្ទះបាយ</span></h2>
+                        <span id="kitchen-running-count" class="px-3 py-1 bg-amber-500/15 text-amber-500 font-bold rounded-full text-xs">0 Orders Running</span>
+                    </div>
+                    <div id="kitchen-orders-grid" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+                        <!-- Kitchen cards inserted by JS -->
+                    </div>
+                </div>
+
+                <!-- TAB: DASHBOARD -->
+                <div id="content-dashboard" class="tab-content hidden space-y-6">
+                    <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                        <div>
+                          <h2 class="text-xl font-bold tracking-tight">📊 <span data-key="dashboard">ផ្ទាំងគ្រប់គ្រង</span></h2>
+                          <p class="text-xs text-slate-400">RM HENG RESTO Realtime Overview</p>
+                        </div>
+                        <div class="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-xl shrink-0">
+                          <button onclick="setReportFilter('day')" id="filter-day" class="report-filter-btn px-3 py-1.5 rounded-lg text-xs font-bold uppercase bg-amber-500 text-white" data-key="day">ថ្ងៃនេះ</button>
+                          <button onclick="setReportFilter('month')" id="filter-month" class="report-filter-btn px-3 py-1.5 rounded-lg text-xs font-bold uppercase text-slate-400" data-key="month">ខែនេះ</button>
+                          <button onclick="setReportFilter('year')" id="filter-year" class="report-filter-btn px-3 py-1.5 rounded-lg text-xs font-bold uppercase text-slate-400" data-key="year">ឆ្នាំនេះ</button>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+                        <div class="p-6 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/50">
+                            <span class="text-xs font-semibold text-slate-400" data-key="totalSales">លក់សរុប</span>
+                            <h3 id="dash-sales" class="text-xl font-extrabold mt-1 text-emerald-500">0៛</h3>
+                        </div>
+                        <div class="p-6 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/50">
+                            <span class="text-xs font-semibold text-slate-400" data-key="totalTransactions">ចំនួនលក់បាន</span>
+                            <h3 id="dash-trans" class="text-xl font-extrabold mt-1 text-amber-500">0</h3>
+                        </div>
+                        <div class="p-6 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/50">
+                            <span class="text-xs font-semibold text-slate-400" data-key="totalExpenses">ចំណាយសរុប</span>
+                            <h3 id="dash-expenses" class="text-xl font-extrabold mt-1 text-rose-500">0៛</h3>
+                        </div>
+                        <div class="p-6 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/50">
+                            <span class="text-xs font-semibold text-slate-400" data-key="netProfit">ប្រាក់ចំណេញសុទ្ធ</span>
+                            <h3 id="dash-profit" class="text-xl font-extrabold mt-1 text-blue-500">0៛</h3>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- TAB: REPORTS -->
+                <div id="content-reports" class="tab-content hidden space-y-6">
+                    <h2 class="text-xl font-bold tracking-tight">📈 <span data-key="reports">របាយការណ៍លក់</span></h2>
+                    <div class="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-x-auto">
+                        <table class="w-full text-left border-collapse">
+                            <thead>
+                                <tr class="border-b border-slate-200 dark:border-slate-800 text-xs uppercase font-extrabold text-slate-400 bg-slate-50 dark:bg-slate-800/50">
+                                    <th class="p-4" data-key="orderId">លេខកូដវិក្កយបត្រ</th>
+                                    <th class="p-4" data-key="date">កាលបរិច្ឆេទ</th>
+                                    <th class="p-4" data-key="tableNo">លេខតុ/កៅអី</th>
+                                    <th class="p-4">Items</th>
+                                    <th class="p-4" data-key="discount">បញ្ចុះតម្លៃ (%)</th>
+                                    <th class="p-4" data-key="grandTotal">សរុបចុងក្រោយ</th>
+                                    <th class="p-4" data-key="status">ស្ថានភាព</th>
+                                    <th class="p-4 text-center" data-key="actions">សកម្មភាព</th>
+                                </tr>
+                            </thead>
+                            <tbody id="reports-table-body" class="divide-y divide-slate-100 dark:divide-slate-800 text-xs">
+                                <!-- Report rows inserted by JS -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- TAB: EXPENSES -->
+                <div id="content-expenses" class="tab-content hidden space-y-6">
+                    <div class="flex justify-between items-center">
+                        <h2 class="text-xl font-bold tracking-tight">💸 <span data-key="expenses">ការចំណាយ</span></h2>
+                        <button onclick="openExpenseModal()" class="px-4 py-2 bg-amber-500 text-white rounded-xl text-xs font-bold hover:bg-amber-600 transition-colors" data-key="addExpense">បន្ថែមការចំណាយ</button>
+                    </div>
+                    <div class="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-x-auto">
+                        <table class="w-full text-left border-collapse">
+                            <thead>
+                                <tr class="border-b border-slate-200 dark:border-slate-800 text-xs uppercase font-extrabold text-slate-400 bg-slate-50 dark:bg-slate-800/50">
+                                    <th class="p-4" data-key="date">កាលបរិច្ឆេទ</th>
+                                    <th class="p-4" data-key="expenseName">ពិពណ៌នាការចំណាយ</th>
+                                    <th class="p-4" data-key="amount">ចំនួនទឹកប្រាក់ ($)</th>
+                                    <th class="p-4 text-center" data-key="actions">សកម្មភាព</th>
+                                </tr>
+                            </thead>
+                            <tbody id="expenses-table-body" class="divide-y divide-slate-100 dark:divide-slate-800 text-xs">
+                                <!-- Expense rows inserted by JS -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- TAB: MENU MANAGEMENT -->
+                <div id="content-menu" class="tab-content hidden space-y-6">
+                    <div class="flex justify-between items-center">
+                        <h2 class="text-xl font-bold tracking-tight">🍽️ <span data-key="menu">មុខម្ហូប</span></h2>
+                        <button onclick="openMenuModal()" class="px-4 py-2 bg-amber-500 text-white rounded-xl text-xs font-bold hover:bg-amber-600 transition-colors" data-key="addDish">បន្ថែមមុខម្ហូបថ្មី</button>
+                    </div>
+                    <div id="menu-items-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                        <!-- Menu items inserted by JS -->
+                    </div>
+                </div>
+
+                <!-- MOBILE FLOATING CART BUTTON -->
+                <button onclick="toggleMobileCart(true)" id="mobile-cart-btn" class="xl:hidden hidden fixed bottom-6 right-6 z-40 bg-amber-500 hover:bg-amber-600 text-white w-14 h-14 rounded-full shadow-2xl flex items-center justify-center transition-all duration-300 transform scale-110 border-2 border-white dark:border-slate-900">
+                    <span class="text-2xl">🛒</span>
+                    <span id="mobile-cart-badge" class="absolute -top-1.5 -right-1.5 bg-rose-500 text-white text-[10px] font-black w-6 h-6 rounded-full flex items-center justify-center animate-bounce shadow-md">0</span>
+                </button>
+
+            </main>
+        </div>
+
+        <!-- FOOTER -->
+        <footer class="py-4 text-center text-xs border-t border-slate-200 dark:border-slate-900 bg-white dark:bg-slate-950 text-slate-400">
+            <p class="font-bold">RM HENG RESTO &copy; 2026</p>
+            <p class="text-[10px] mt-1 text-amber-500">📲 <span data-key="contact">ទំនាក់ទំនង</span> WhatsApp: +85590878980</p>
+            <p class="font-bold">Copyright@Akla &copy2026 </p>
+        </footer>
+
+    </div>
+
+    <!-- ==========================================
+        MODALS / DIALOGS
+    ========================================== -->
+    
+    <!-- CHECKOUT MODAL -->
+    <div id="checkout-modal" class="fixed inset-0 z-50 hidden flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+        <div class="w-full max-w-md p-6 rounded-2xl shadow-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-900 dark:text-white">
+            <h3 class="text-lg font-bold mb-4 flex items-center space-x-2">
+                <span>💳</span> <span data-key="checkout">គិតលុយ និងព្រីន</span>
+            </h3>
+            <div class="space-y-4">
+                <div>
+                    <label class="text-xs text-slate-400 uppercase font-bold" data-key="grandTotal">សរុបចុងក្រោយ</label>
+                    <div id="checkout-grandtotal" class="text-3xl font-black text-amber-500 mt-1">0៛</div>
+                </div>
+                <div>
+                    <label class="text-xs text-slate-400 uppercase font-bold" data-key="cashReceived">ប្រាក់ទទួលបាន</label>
+                    <input type="number" id="cash-received-input" oninput="calculateChange()" class="w-full mt-1.5 p-3 rounded-xl font-bold text-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white focus:outline-none">
+                </div>
+                <div class="p-3 bg-slate-100 dark:bg-slate-800/50 rounded-xl">
+                    <span class="text-xs text-slate-400" data-key="changeDue">ប្រាក់អាប់ជូនវិញ</span>
+                    <div id="checkout-change" class="text-xl font-bold text-emerald-500 mt-1">0៛</div>
+                </div>
+                <div>
+                    <label class="text-xs text-slate-400 uppercase font-bold" data-key="addNote">កំណត់ចំណាំបន្ថែម...</label>
+                    <textarea id="order-note-input" rows="2" class="w-full mt-1.5 p-3 rounded-xl text-xs border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white focus:outline-none" placeholder="បន្ថែមសម្គាល់ផ្សេងៗ..."></textarea>
+                </div>
+            </div>
+            <div class="flex space-x-3 mt-6">
+                <button onclick="closeCheckoutModal()" class="w-1/2 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 font-bold text-xs" data-key="cancel">បោះបង់</button>
+                <button onclick="submitCheckout()" class="w-1/2 py-2.5 bg-amber-500 hover:bg-amber-600 text-white font-bold rounded-xl text-xs shadow-lg shadow-amber-500/20" data-key="save">រក្សាទុក</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- DISH MODAL -->
+    <div id="dish-modal" class="fixed inset-0 z-50 hidden flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+        <div class="w-full max-w-md p-6 rounded-2xl shadow-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-900 dark:text-white">
+            <h3 id="dish-modal-title" class="text-lg font-bold mb-4">បន្ថែមមុខម្ហូបថ្មី</h3>
+            <div class="space-y-4">
+                <input type="hidden" id="dish-id-input">
+                <div>
+                    <label class="text-xs text-slate-400 font-bold" data-key="dishNameKh">ឈ្មោះម្ហូប (ខ្មែរ)</label>
+                    <input type="text" id="dish-namekh-input" class="w-full mt-1.5 p-2.5 rounded-xl text-sm border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white focus:outline-none">
+                </div>
+                <div>
+                    <label class="text-xs text-slate-400 font-bold" data-key="dishNameEn">ឈ្មោះម្ហូប (អង់គ្លេស)</label>
+                    <input type="text" id="dish-nameen-input" class="w-full mt-1.5 p-2.5 rounded-xl text-sm border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white focus:outline-none">
+                </div>
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="text-xs text-slate-400 font-bold" data-key="price">តម្លៃ ($)</label>
+                        <input type="number" step="0.01" id="dish-price-input" class="w-full mt-1.5 p-2.5 rounded-xl text-sm border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white focus:outline-none">
+                    </div>
+                    <div>
+                        <label class="text-xs text-slate-400 font-bold" data-key="category">ប្រភេទ</label>
+                        <select id="dish-cat-input" class="w-full mt-1.5 p-2.5 rounded-xl text-sm border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white focus:outline-none">
+                            <option value="food">អាហារ</option>
+                            <option value="drink">ភេសជ្ជៈ</option>
+                            <option value="dessert">បង្អែម</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="flex items-center space-x-3 mt-4">
+                    <input type="checkbox" id="dish-available-input" checked class="rounded border-slate-300 dark:border-slate-700 text-amber-500 focus:ring-amber-500 h-4 w-4">
+                    <label htmlFor="dish-available-input" class="text-xs font-bold text-slate-400" data-key="available">មានលក់</label>
+                </div>
+            </div>
+            <div class="flex space-x-3 mt-6">
+                <button onclick="closeMenuModal()" class="w-1/2 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 font-bold text-xs" data-key="cancel">បោះបង់</button>
+                <button onclick="saveMenuItem()" class="w-1/2 py-2.5 bg-amber-500 text-white font-bold rounded-xl text-xs" data-key="save">រក្សាទុក</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- EXPENSE MODAL -->
+    <div id="expense-modal" class="fixed inset-0 z-50 hidden flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+        <div class="w-full max-w-md p-6 rounded-2xl shadow-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-900 dark:text-white">
+            <h3 class="text-lg font-bold mb-4" data-key="addExpense">បន្ថែមការចំណាយ</h3>
+            <div class="space-y-4">
+                <div>
+                    <label class="text-xs text-slate-400 font-bold" data-key="expenseName">ពិពណ៌នាការចំណាយ</label>
+                    <input type="text" id="expense-desc-input" class="w-full mt-1.5 p-2.5 rounded-xl text-sm border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white focus:outline-none">
+                </div>
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="text-xs text-slate-400 font-bold" data-key="amount">ចំនួនទឹកប្រាក់ ($)</label>
+                        <input type="number" step="0.01" id="expense-amount-input" class="w-full mt-1.5 p-2.5 rounded-xl text-sm border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white focus:outline-none">
+                    </div>
+                    <div>
+                        <label class="text-xs text-slate-400 font-bold" data-key="date">កាលបរិច្ឆេទ</label>
+                        <input type="date" id="expense-date-input" class="w-full mt-1.5 p-2.5 rounded-xl text-xs border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white focus:outline-none">
+                    </div>
+                </div>
+            </div>
+            <div class="flex space-x-3 mt-6">
+                <button onclick="closeExpenseModal()" class="w-1/2 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 font-bold text-xs" data-key="cancel">បោះបង់</button>
+                <button onclick="saveExpense()" class="w-1/2 py-2.5 bg-amber-500 text-white font-bold rounded-xl text-xs" data-key="save">រក្សាទុក</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- PRINT AREA WRAPPER (HIDDEN EXCEPT WHEN PRINTING) -->
+    <div id="print-receipt-area" class="hidden">
+        <!-- Will be dynamically filled by Javascript and printed -->
+    </div>
+
+    <!-- NOTIFICATION SYSTEM -->
+    <div id="toast" class="fixed top-20 right-6 z-50 hidden flex items-center bg-teal-500 text-white px-4 py-3 rounded-xl shadow-xl transition-all duration-300">
+        <span class="font-bold mr-2" data-key="notification">ការជូនដំណឹង</span>: <span id="toast-msg"></span>
+    </div>
+
+    <!-- ==========================================
+        APPLICATION JAVASCRIPT
+    ========================================== -->
+    <script>
+        // --- TRANSLATION DICTIONARY (KH/EN) ---
+        const translations = {
+            kh: {
+                dashboard: 'ផ្ទាំងគ្រប់គ្រង',
+                pos: 'លក់ (POS)',
+                kitchen: 'ផ្ទះបាយ',
+                menu: 'មុខម្ហូប',
+                expenses: 'ការចំណាយ',
+                reports: 'របាយការណ៍លក់',
+                rmHengResto: 'ភោជនីយដ្ឋាន រីម ហេង',
+                contact: 'ទំនាក់ទំនង',
+                darkMode: 'របៀបងងឹត',
+                lightMode: 'របៀបពន្លឺ',
+                totalSales: 'លក់សរុប',
+                totalTransactions: 'ចំនួនលក់បាន',
+                totalExpenses: 'ចំណាយសរុប',
+                netProfit: 'ប្រាក់ចំណេញសុទ្ធ',
+                searchFood: 'ស្វែងរកមុខម្ហូប...',
+                all: 'ទាំងអស់',
+                food: 'អាហារ',
+                drink: 'ភេសជ្ជៈ',
+                dessert: 'បង្អែម',
+                cart: 'កន្ត្រកទំនិញ',
+                emptyCart: 'កន្ត្រកទទេស្អាត',
+                tableNo: 'លេខតុ/កៅអី',
+                discount: 'បញ្ចុះតម្លៃ (%)',
+                tax: 'ពន្ធ (%)',
+                total: 'សរុប',
+                grandTotal: 'សរុបចុងក្រោយ',
+                checkout: 'គិតលុយ និងព្រីន',
+                addNote: 'កំណត់ចំណាំបន្ថែម...',
+                status: 'ស្ថានភាព',
+                actions: 'សកម្មភាព',
+                available: 'មានលក់',
+                unavailable: 'អស់ហើយ',
+                addDish: 'បន្ថែមមុខម្ហូបថ្មី',
+                editDish: 'កែសម្រួលមុខម្ហូប',
+                dishNameKh: 'ឈ្មោះម្ហូប (ខ្មែរ)',
+                dishNameEn: 'ឈ្មោះម្ហូប (អង់គ្លេស)',
+                price: 'តម្លៃដើម ($)',
+                category: 'ប្រភេទ',
+                save: 'រក្សាទុក',
+                cancel: 'បោះបង់',
+                addExpense: 'បន្ថែមការចំណាយ',
+                expenseName: 'ពិពណ៌នាការចំណាយ',
+                amount: 'ចំនួនទឹកប្រាក់ ($)',
+                date: 'កាលបរិច្ឆេទ',
+                filterBy: 'តម្រងស្វែងរក',
+                day: 'ថ្ងៃនេះ',
+                month: 'ខែនេះ',
+                year: 'ឆ្នាំនេះ',
+                orderId: 'លេខកូដវិក្កយបត្រ',
+                time: 'ម៉ោង',
+                pending: 'កំពុងរង់ចាំ',
+                cooking: 'កំពុងចំអិន',
+                ready: 'រួចរាល់',
+                delivered: 'បានប្រគល់ជូន',
+                changeStatus: 'ប្តូរស្ថានភាព',
+                cashReceived: 'ប្រាក់ទទួលបាន',
+                changeDue: 'ប្រាក់អាប់ជូនវិញ',
+                printReceipt: 'បោះពុម្ពវិក្កយបត្រ',
+                receiptTitle: 'វិក្កយបត្រទូទាត់ប្រាក់',
+                thankYou: 'សូមអរគុណសម្រាប់ការគាំទ្រ! សូមអញ្ជើញមកម្តងទៀត!',
+                deleteConfirm: 'តើអ្នកប្រាកដជាចង់លុបមែនទេ?',
+                notification: 'ការជូនដំណឹង',
+                noData: 'មិនមានទិន្នន័យឡើយ',
+                expenseCategory: 'ប្រភេទចំណាយ',
+                addSuccess: 'រក្សាទុកបានជោគជ័យ!',
+                deleteSuccess: 'លុបបានជោគជ័យ!',
+                validationError: 'សូមបំពេញព័ត៌មានអោយបានគ្រប់គ្រាន់!',
+                close: 'បិទ',
+                currencySymbol: '៛',
+                currencyLabel: 'រៀល (KHR)'
+            },
+            en: {
+                dashboard: 'Dashboard',
+                pos: 'POS (Sell)',
+                kitchen: 'Kitchen',
+                menu: 'Menu',
+                expenses: 'Expenses',
+                reports: 'Sales Reports',
+                rmHengResto: 'RM HENG RESTO',
+                contact: 'Contact',
+                darkMode: 'Dark Mode',
+                lightMode: 'Light Mode',
+                totalSales: 'Total Sales',
+                totalTransactions: 'Transactions',
+                totalExpenses: 'Total Expenses',
+                netProfit: 'Net Profit',
+                searchFood: 'Search dishes...',
+                all: 'All',
+                food: 'Food',
+                drink: 'Drink',
+                dessert: 'Dessert',
+                cart: 'Shopping Cart',
+                emptyCart: 'Cart is empty',
+                tableNo: 'Table/Seat No.',
+                discount: 'Discount (%)',
+                tax: 'Tax (%)',
+                total: 'Total',
+                grandTotal: 'Grand Total',
+                checkout: 'Checkout & Print',
+                addNote: 'Add notes...',
+                status: 'Status',
+                actions: 'Actions',
+                available: 'Available',
+                unavailable: 'Unavailable',
+                addDish: 'Add New Dish',
+                editDish: 'Edit Dish',
+                dishNameKh: 'Name (Khmer)',
+                dishNameEn: 'Name (English)',
+                price: 'Price ($)',
+                category: 'Category',
+                save: 'Save',
+                cancel: 'Cancel',
+                addExpense: 'Add Expense',
+                expenseName: 'Expense Description',
+                amount: 'Amount ($)',
+                date: 'Date',
+                filterBy: 'Filter By',
+                day: 'Today',
+                month: 'This Month',
+                year: 'This Year',
+                orderId: 'Receipt ID',
+                time: 'Time',
+                pending: 'Pending',
+                cooking: 'Cooking',
+                ready: 'Ready',
+                delivered: 'Delivered',
+                changeStatus: 'Change Status',
+                cashReceived: 'Cash Received',
+                changeDue: 'Change Due',
+                printReceipt: 'Print Receipt',
+                receiptTitle: 'Payment Receipt',
+                thankYou: 'Thank you for your support! Please come again!',
+                deleteConfirm: 'Are you sure you want to delete?',
+                notification: 'Notification',
+                noData: 'No data available',
+                expenseCategory: 'Expense Type',
+                addSuccess: 'Successfully saved!',
+                deleteSuccess: 'Successfully deleted!',
+                validationError: 'Please fill in all fields!',
+                close: 'Close',
+                currencySymbol: '$',
+                currencyLabel: 'USD ($)'
+            }
+        };
+
+        // --- DEFAULT MENU DATA SEED ---
+        const defaultMenuSeed = [
+            { id: 'm1', nameKh: 'បាយសាច់ជ្រូក', nameEn: 'Pork Rice', price: 1.5, category: 'food', available: true },
+            { id: 'm2', nameKh: 'ឡុកឡាក់សាច់គោ', nameEn: 'Beef Lok Lak', price: 3.5, category: 'food', available: true },
+            { id: 'm3', nameKh: 'គុយទាវសាច់ជ្រូក', nameEn: 'Pork Noodle Soup', price: 2.5, category: 'food', available: true },
+            { id: 'm4', nameKh: 'កាហ្វេទឹកដោះគោទឹកកក', nameEn: 'Iced Milk Coffee', price: 1.25, category: 'drink', available: true },
+            { id: 'm5', nameKh: 'តែបៃតងក្រូចឆ្មារ', nameEn: 'Lemon Green Tea', price: 1.25, category: 'drink', available: true },
+            { id: 'm6', nameKh: 'ផ្លែឈើស្រស់', nameEn: 'Fresh Fruits Slice', price: 1.5, category: 'dessert', available: true }
+        ];
+
+        // --- EXCHANGE RATE SETUP ---
+        const EXCHANGE_RATE = 4000;
+
+        // System States
+        let currentLang = 'kh';
+        let currentTheme = 'dark';
+        let activeTab = 'pos';
+        let selectedCategory = 'all';
+        let searchQuery = '';
+        let reportFilter = 'day';
+
+        // Core Databases loaded from LocalStorage
+        let menuItems = [];
+        let sales = [];
+        let expenses = [];
+        let cart = [];
+
+        // Local storage keys
+        const LOCAL_KEYS = {
+            theme: 'rm_theme',
+            lang: 'rm_lang',
+            menu: 'rm_menu_items',
+            sales: 'rm_sales_items',
+            expenses: 'rm_expenses_items'
+        };
+
+        // Supabase config:
+        // 1) Create table `rm_pos_sync` with columns:
+        //    store_id text primary key, menu_items jsonb, sales_items jsonb, expense_items jsonb, updated_at timestamptz
+        // 2) Put your project URL + anon key below.
+        const CLOUD_SYNC_CONFIG = {
+            supabaseUrl: 'https://cieiyeaendzkljfyrlqx.supabase.co',
+            supabaseAnonKey: 'sb_publishable_IdV_G8wR0-U1ScMyYMp-_g_JAu2-P8a',
+            tableName: 'rm_pos_sync',
+            storeId: 'main-store'
+        };
+
+        let supabaseClient = null;
+        let isCloudSyncEnabled = false;
+        let isApplyingRemoteState = false;
+        let latestCloudUpdatedAt = 0;
+        let cloudChannel = null;
+        let cloudPollingTimer = null;
+
+        function setSyncStatus(label, tone = 'local') {
+            const badge = document.getElementById('sync-status');
+            if (!badge) return;
+            badge.textContent = label;
+            badge.className = 'hidden sm:inline-flex px-2.5 py-1 rounded-lg text-[10px] font-bold';
+
+            if (tone === 'live') {
+                badge.classList.add('bg-emerald-500/15', 'text-emerald-500');
+            } else if (tone === 'warn') {
+                badge.classList.add('bg-amber-500/15', 'text-amber-500');
+            } else if (tone === 'error') {
+                badge.classList.add('bg-rose-500/15', 'text-rose-500');
+            } else {
+                badge.classList.add('bg-slate-100', 'dark:bg-slate-800', 'text-slate-500');
+            }
+        }
+
+        function persistLocalData() {
+            localStorage.setItem(LOCAL_KEYS.menu, JSON.stringify(menuItems));
+            localStorage.setItem(LOCAL_KEYS.sales, JSON.stringify(sales));
+            localStorage.setItem(LOCAL_KEYS.expenses, JSON.stringify(expenses));
+        }
+
+        function loadLocalData() {
+            const localMenu = localStorage.getItem(LOCAL_KEYS.menu);
+            if (localMenu) {
+                menuItems = JSON.parse(localMenu);
+            } else {
+                menuItems = [...defaultMenuSeed];
+            }
+
+            const localSales = localStorage.getItem(LOCAL_KEYS.sales);
+            sales = localSales ? JSON.parse(localSales) : [];
+
+            const localExpenses = localStorage.getItem(LOCAL_KEYS.expenses);
+            expenses = localExpenses ? JSON.parse(localExpenses) : [];
+
+            persistLocalData();
+        }
+
+        function renderAllData() {
+            renderFoodGrid();
+            renderCartList();
+            renderKitchenGrid();
+            renderDashboard();
+            renderReports();
+            renderExpensesTable();
+            renderMenuGrid();
+        }
+
+        function isCloudConfigured() {
+            return Boolean(
+                CLOUD_SYNC_CONFIG.supabaseUrl &&
+                CLOUD_SYNC_CONFIG.supabaseAnonKey &&
+                window.supabase &&
+                typeof window.supabase.createClient === 'function'
+            );
+        }
+
+        function applyRemoteState(row) {
+            isApplyingRemoteState = true;
+
+            menuItems = Array.isArray(row.menu_items) && row.menu_items.length > 0 ? row.menu_items : [...defaultMenuSeed];
+            sales = Array.isArray(row.sales_items) ? row.sales_items : [];
+            expenses = Array.isArray(row.expense_items) ? row.expense_items : [];
+
+            latestCloudUpdatedAt = row.updated_at ? new Date(row.updated_at).getTime() || 0 : Date.now();
+            persistLocalData();
+            renderAllData();
+
+            isApplyingRemoteState = false;
+        }
+
+        async function writeCloudState() {
+            if (!isCloudSyncEnabled || isApplyingRemoteState) return;
+
+            const payload = {
+                store_id: CLOUD_SYNC_CONFIG.storeId,
+                menu_items: menuItems,
+                sales_items: sales,
+                expense_items: expenses,
+                updated_at: new Date().toISOString()
+            };
+
+            const { error } = await supabaseClient
+                .from(CLOUD_SYNC_CONFIG.tableName)
+                .upsert(payload, { onConflict: 'store_id' });
+
+            if (error) {
+                throw error;
+            }
+
+            latestCloudUpdatedAt = new Date(payload.updated_at).getTime();
+        }
+
+        function persistAndSyncData() {
+            persistLocalData();
+            if (isCloudSyncEnabled) {
+                writeCloudState().catch(() => {
+                    setSyncStatus('Cloud Error', 'error');
+                });
+            }
+        }
+
+        function subscribeCloudChanges() {
+            if (!supabaseClient) return;
+
+            if (cloudChannel) {
+                supabaseClient.removeChannel(cloudChannel);
+            }
+
+            cloudChannel = supabaseClient
+                .channel(`rm-sync-${CLOUD_SYNC_CONFIG.storeId}`)
+                .on(
+                    'postgres_changes',
+                    {
+                        event: '*',
+                        schema: 'public',
+                        table: CLOUD_SYNC_CONFIG.tableName,
+                        filter: `store_id=eq.${CLOUD_SYNC_CONFIG.storeId}`
+                    },
+                    (payload) => {
+                        if (!payload || !payload.new) return;
+                        const incomingTs = payload.new.updated_at ? new Date(payload.new.updated_at).getTime() || 0 : 0;
+                        if (incomingTs > latestCloudUpdatedAt) {
+                            applyRemoteState(payload.new);
+                        }
+                    }
+                )
+                .subscribe();
+        }
+
+        async function loadCloudState(forceApply = false) {
+            const { data, error } = await supabaseClient
+                .from(CLOUD_SYNC_CONFIG.tableName)
+                .select('store_id,menu_items,sales_items,expense_items,updated_at')
+                .eq('store_id', CLOUD_SYNC_CONFIG.storeId)
+                .maybeSingle();
+
+            if (error) {
+                throw error;
+            }
+
+            if (data) {
+                const incomingTs = data.updated_at ? new Date(data.updated_at).getTime() || 0 : 0;
+                if (forceApply || incomingTs > latestCloudUpdatedAt) {
+                    applyRemoteState(data);
+                }
+            } else {
+                await writeCloudState();
+            }
+        }
+
+        function startCloudPolling() {
+            if (cloudPollingTimer) {
+                clearInterval(cloudPollingTimer);
+            }
+            cloudPollingTimer = setInterval(() => {
+                if (!isCloudSyncEnabled) return;
+                loadCloudState(false).catch(() => {
+                    setSyncStatus('Cloud Error', 'error');
+                });
+            }, 4000);
+        }
+
+        async function initializeCloudSync() {
+            if (!isCloudConfigured()) {
+                setSyncStatus('Local', 'local');
+                return;
+            }
+
+            try {
+                setSyncStatus('Connecting...', 'warn');
+                supabaseClient = window.supabase.createClient(
+                    CLOUD_SYNC_CONFIG.supabaseUrl,
+                    CLOUD_SYNC_CONFIG.supabaseAnonKey
+                );
+                isCloudSyncEnabled = true;
+                await loadCloudState(true);
+                subscribeCloudChanges();
+                startCloudPolling();
+                setSyncStatus('Cloud Live', 'live');
+            } catch (err) {
+                isCloudSyncEnabled = false;
+                setSyncStatus('Cloud Error', 'error');
+            }
+        }
+
+        // Seed initialization
+        async function initApp() {
+            // Theme Setup
+            if (localStorage.getItem(LOCAL_KEYS.theme)) {
+                currentTheme = localStorage.getItem(LOCAL_KEYS.theme);
+            }
+            applyTheme();
+
+            // Language Setup
+            if (localStorage.getItem(LOCAL_KEYS.lang)) {
+                currentLang = localStorage.getItem(LOCAL_KEYS.lang);
+            }
+            applyLanguage();
+
+            loadLocalData();
+            renderAllData();
+            await initializeCloudSync();
+
+            // LocalStorage sync fallback (same browser multi-tab)
+            window.addEventListener('storage', (event) => {
+                if (![LOCAL_KEYS.menu, LOCAL_KEYS.sales, LOCAL_KEYS.expenses].includes(event.key)) return;
+                loadLocalData();
+                renderAllData();
+            });
+        }
+
+        // Apply dark/light colors
+        function applyTheme() {
+            const root = document.documentElement;
+            if (currentTheme === 'dark') {
+                root.classList.add('dark');
+                document.getElementById('theme-icon').textContent = '☀️';
+            } else {
+                root.classList.remove('dark');
+                document.getElementById('theme-icon').textContent = '🌙';
+            }
+            localStorage.setItem(LOCAL_KEYS.theme, currentTheme);
+        }
+
+        function toggleTheme() {
+            currentTheme = currentTheme === 'dark' ? 'light' : 'dark';
+            applyTheme();
+        }
+
+        // Apply Khmer/English Dictionary translations
+        function applyLanguage() {
+            const keys = translations[currentLang];
+            document.querySelectorAll('[data-key]').forEach(elem => {
+                const key = elem.getAttribute('data-key');
+                if (keys[key]) {
+                    elem.textContent = keys[key];
+                }
+            });
+
+            // Update header button label
+            const btn = document.getElementById('lang-btn');
+            btn.textContent = currentLang === 'kh' ? '🌐 English (USD $)' : '🌐 ភាសាខ្មែរ (រៀល ៛)';
+            
+            // Re-render components relying on currency formats
+            renderFoodGrid();
+            renderCartList();
+            updateCartTotals();
+            renderMenuGrid();
+            renderDashboard();
+            renderReports();
+            renderExpensesTable();
+
+            localStorage.setItem(LOCAL_KEYS.lang, currentLang);
+        }
+
+        function toggleLanguage() {
+            currentLang = currentLang === 'kh' ? 'en' : 'kh';
+            applyLanguage();
+        }
+
+        // Tab Switching Logic
+        function switchTab(tabId) {
+            activeTab = tabId;
+            document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
+            document.getElementById(`content-${tabId}`).classList.remove('hidden');
+
+            document.querySelectorAll('.tab-btn').forEach(btn => {
+                btn.className = "tab-btn flex items-center space-x-3 px-4 py-3 rounded-xl text-sm font-semibold transition-all whitespace-nowrap lg:w-full text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800";
+            });
+
+            const activeBtn = document.getElementById(`tab-${tabId}`);
+            activeBtn.className = "tab-btn flex items-center space-x-3 px-4 py-3 rounded-xl text-sm font-semibold transition-all whitespace-nowrap lg:w-full bg-amber-500 text-white shadow-lg shadow-amber-500/20";
+        }
+
+        // Toast notifications
+        function showToast(msg) {
+            const toast = document.getElementById('toast');
+            document.getElementById('toast-msg').textContent = msg;
+            toast.classList.remove('hidden');
+            setTimeout(() => {
+                toast.classList.add('hidden');
+            }, 3000);
+        }
+
+        // Currency value formatter helper
+        function formatVal(usdVal) {
+            if (currentLang === 'kh') {
+                const rielVal = Math.round(usdVal * EXCHANGE_RATE);
+                return `${rielVal.toLocaleString()}៛`;
+            }
+            return `$${usdVal.toFixed(2)}`;
+        }
+
+        // ==========================================
+        // RENDER POS FOOD GRID
+        // ==========================================
+        function renderFoodGrid() {
+            const grid = document.getElementById('food-grid');
+            grid.innerHTML = '';
+
+            const filtered = menuItems.filter(item => {
+                const nameStr = `${item.nameKh} ${item.nameEn}`.toLowerCase();
+                const matchesSearch = nameStr.includes(searchQuery.toLowerCase());
+                const matchesCategory = selectedCategory === 'all' || item.category === selectedCategory;
+                return matchesSearch && matchesCategory;
+            });
+
+            filtered.forEach(item => {
+                const card = document.createElement('div');
+                card.onclick = () => addToCart(item);
+                card.className = `group p-4 rounded-2xl border transition-all duration-200 cursor-pointer flex flex-col justify-between h-40 shadow-sm hover:shadow-md ${
+                    item.available 
+                        ? 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-amber-500/40'
+                        : 'opacity-50 cursor-not-allowed bg-slate-900/10'
+                }`;
+
+                card.innerHTML = `
+                    <div>
+                        <div class="flex justify-between items-start">
+                            <span class="text-[10px] font-bold uppercase px-2 py-0.5 rounded ${
+                                item.category === 'food' ? 'bg-red-500/10 text-red-500' : item.category === 'drink' ? 'bg-blue-500/10 text-blue-500' : 'bg-purple-500/10 text-purple-500'
+                            }">
+                                ${translations[currentLang][item.category]}
+                            </span>
+                            ${!item.available ? `<span class="text-[9px] bg-gray-500 text-white font-bold px-1.5 rounded">${translations[currentLang].unavailable}</span>` : ''}
+                        </div>
+                        <h3 class="font-bold text-sm mt-3 line-clamp-1">${currentLang === 'kh' ? item.nameKh : item.nameEn}</h3>
+                        <p class="text-xs text-slate-400 mt-1">${currentLang === 'kh' ? item.nameEn : item.nameKh}</p>
+                    </div>
+                    <div class="flex justify-between items-center mt-4">
+                        <span class="text-base font-extrabold text-amber-500">${formatVal(item.price)}</span>
+                        <span class="text-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200 text-amber-500">➕</span>
+                    </div>
+                `;
+                grid.appendChild(card);
+            });
+
+            if (filtered.length === 0) {
+                grid.innerHTML = `<div class="col-span-full py-12 text-center text-slate-500 text-sm">${translations[currentLang].noData}</div>`;
+            }
+        }
+
+        function setCategory(cat) {
+            selectedCategory = cat;
+            document.querySelectorAll('.cat-btn').forEach(btn => {
+                btn.className = "cat-btn px-4 py-2 rounded-xl text-sm font-semibold bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700 transition-all";
+            });
+            document.getElementById(`cat-${cat}`).className = "cat-btn px-4 py-2 rounded-xl text-sm font-semibold bg-amber-500 text-white shadow-lg shadow-amber-500/30 transition-all";
+            renderFoodGrid();
+        }
+
+        function handleSearch(val) {
+            searchQuery = val;
+            renderFoodGrid();
+        }
+
+        // ==========================================
+        // CART BUSINESS LOGIC
+        // ==========================================
+        function addToCart(item) {
+            if (!item.available) return;
+            const existing = cart.find(c => c.id === item.id);
+            if (existing) {
+                existing.qty += 1;
+            } else {
+                cart.push({ ...item, qty: 1 });
+            }
+            showToast(currentLang === 'kh' ? `បានបញ្ចូល ${item.nameKh} ទៅក្នុងកន្ត្រក` : `Added ${item.nameEn} to cart`);
+            renderCartList();
+        }
+
+        function updateCartQty(id, change) {
+            const existing = cart.find(c => c.id === id);
+            if (existing) {
+                existing.qty += change;
+                if (existing.qty <= 0) {
+                    cart = cart.filter(c => c.id !== id);
+                }
+            }
+            renderCartList();
+        }
+
+        function removeFromCart(id) {
+            cart = cart.filter(c => c.id !== id);
+            renderCartList();
+        }
+
+        function getSubtotal() {
+            return cart.reduce((sum, item) => sum + (item.price * item.qty), 0);
+        }
+
+        function getGrandTotal() {
+            const sub = getSubtotal();
+            const discount = parseFloat(document.getElementById('discount-input').value) || 0;
+            const discAmount = sub * (discount / 100);
+            return parseFloat((sub - discAmount).toFixed(2));
+        }
+
+        function renderCartList() {
+            const list = document.getElementById('cart-items-list');
+            list.innerHTML = '';
+
+            cart.forEach(item => {
+                const el = document.createElement('div');
+                el.className = "flex justify-between items-center p-3 rounded-xl bg-slate-100 dark:bg-slate-800/50 border border-slate-200/50 dark:border-slate-800/50";
+                el.innerHTML = `
+                    <div class="flex-1 pr-2">
+                        <h4 class="font-bold text-xs line-clamp-1">${currentLang === 'kh' ? item.nameKh : item.nameEn}</h4>
+                        <span class="text-xs text-amber-500 font-bold">${formatVal(item.price)}</span>
+                    </div>
+                    <div class="flex items-center space-x-2">
+                        <button onclick="updateCartQty('${item.id}', -1)" class="p-1 rounded bg-slate-200 dark:bg-slate-800 text-slate-800 dark:text-white">➖</button>
+                        <span class="text-xs font-bold w-6 text-center">${item.qty}</span>
+                        <button onclick="updateCartQty('${item.id}', 1)" class="p-1 rounded bg-slate-200 dark:bg-slate-800 text-slate-800 dark:text-white">➕</button>
+                        <button onclick="removeFromCart('${item.id}')" class="p-1 text-rose-500 hover:text-red-600">🗑️</button>
+                    </div>
+                `;
+                list.appendChild(el);
+            });
+
+            if (cart.length === 0) {
+                list.innerHTML = `
+                    <div class="h-full flex flex-col items-center justify-center text-slate-400 dark:text-slate-500 py-12">
+                        <span class="text-4xl mb-2">📥</span>
+                        <p class="text-xs">${translations[currentLang].emptyCart}</p>
+                    </div>
+                `;
+            }
+
+            updateCartTotals();
+            updateMobileFloatingCart();
+        }
+
+        function updateCartTotals() {
+            const sub = getSubtotal();
+            const grand = getGrandTotal();
+            document.getElementById('summary-subtotal').textContent = formatVal(sub);
+            document.getElementById('summary-grandtotal').textContent = formatVal(grand);
+
+            const totalQty = cart.reduce((sum, c) => sum + c.qty, 0);
+            document.getElementById('cart-badge-count').textContent = `${totalQty} Items`;
+        }
+
+        // Mobile float bubble config
+        function updateMobileFloatingCart() {
+            const totalQty = cart.reduce((sum, c) => sum + c.qty, 0);
+            const btn = document.getElementById('mobile-cart-btn');
+            const badge = document.getElementById('mobile-cart-badge');
+
+            if (totalQty > 0) {
+                btn.classList.remove('hidden');
+                badge.textContent = totalQty;
+            } else {
+                btn.classList.add('hidden');
+            }
+        }
+
+        function toggleMobileCart(open) {
+            const sidebar = document.getElementById('cart-sidebar');
+            if (open) {
+                sidebar.classList.remove('translate-x-full');
+            } else {
+                sidebar.classList.add('translate-x-full');
+            }
+        }
+
+        // ==========================================
+        // CHECKOUT & PAYMENT MODAL LOGIC
+        // ==========================================
+        function openCheckoutModal() {
+            if (cart.length === 0) return;
+            const grand = getGrandTotal();
+            document.getElementById('checkout-grandtotal').textContent = formatVal(grand);
+
+            // Pre-fill cash based on currency
+            if (currentLang === 'kh') {
+                document.getElementById('cash-received-input').value = Math.round(grand * EXCHANGE_RATE);
+            } else {
+                document.getElementById('cash-received-input').value = grand;
+            }
+
+            calculateChange();
+            document.getElementById('checkout-modal').classList.remove('hidden');
+        }
+
+        function closeCheckoutModal() {
+            document.getElementById('checkout-modal').classList.add('hidden');
+        }
+
+        function calculateChange() {
+            const grand = getGrandTotal();
+            const cashInput = parseFloat(document.getElementById('cash-received-input').value) || 0;
+            const changeEl = document.getElementById('checkout-change');
+
+            if (currentLang === 'kh') {
+                const grandRiel = Math.round(grand * EXCHANGE_RATE);
+                const changeRiel = Math.max(0, cashInput - grandRiel);
+                changeEl.textContent = `${changeRiel.toLocaleString()}៛`;
+            } else {
+                const changeUsd = Math.max(0, cashInput - grand);
+                changeEl.textContent = `$${changeUsd.toFixed(2)}`;
+            }
+        }
+
+        function submitCheckout() {
+            const grandUsd = getGrandTotal();
+            let cashInput = parseFloat(document.getElementById('cash-received-input').value) || grandUsd;
+            
+            // Translate cash back to USD base if entered in Riel
+            let cashReceivedUsd = cashInput;
+            if (currentLang === 'kh') {
+                cashReceivedUsd = cashInput / EXCHANGE_RATE;
+            }
+
+            const order = {
+                id: 'order_' + Date.now(),
+                date: new Date().toISOString(),
+                items: [...cart],
+                tableNo: document.getElementById('table-input').value || '01',
+                discount: parseFloat(document.getElementById('discount-input').value) || 0,
+                subtotal: getSubtotal(),
+                grandTotal: grandUsd,
+                cashReceived: cashReceivedUsd,
+                changeDue: Math.max(0, cashReceivedUsd - grandUsd),
+                status: 'pending',
+                note: document.getElementById('order-note-input').value || '',
+                currencyAtCheckout: currentLang
+            };
+
+            // Save order
+            sales.unshift(order);
+            persistAndSyncData();
+
+            // Setup Print Receipt
+            generatePrintReceipt(order);
+
+            // Reset forms
+            cart = [];
+            document.getElementById('order-note-input').value = '';
+            document.getElementById('discount-input').value = '0';
+            document.getElementById('table-input').value = '01';
+
+            renderCartList();
+            closeCheckoutModal();
+            toggleMobileCart(false);
+
+            // Trigger Direct Receipt Print Area
+            setTimeout(() => {
+                window.print();
+            }, 300);
+
+            // Refresh dashboards/tables
+            renderKitchenGrid();
+            renderDashboard();
+            renderReports();
+        }
+
+        function generatePrintReceipt(order) {
+            const printArea = document.getElementById('print-receipt-area');
+            
+            // Generate List rows
+            let rowsHtml = '';
+            order.items.forEach(item => {
+                let priceFormatted = currentLang === 'kh' 
+                    ? `${Math.round(item.price * item.qty * EXCHANGE_RATE).toLocaleString()}៛`
+                    : `$${(item.price * item.qty).toFixed(2)}`;
+                
+                rowsHtml += `
+                    <tr style="border-bottom: 1px dashed #ccc;">
+                        <td style="padding: 4px 0;">${currentLang === 'kh' ? item.nameKh : item.nameEn}</td>
+                        <td style="text-align: center;">${item.qty}</td>
+                        <td style="text-align: right;">${priceFormatted}</td>
+                    </tr>
+                `;
+            });
+
+            let subtotalF = currentLang === 'kh' ? `${Math.round(order.subtotal * EXCHANGE_RATE).toLocaleString()}៛` : `$${order.subtotal.toFixed(2)}`;
+            let grandF = currentLang === 'kh' ? `${Math.round(order.grandTotal * EXCHANGE_RATE).toLocaleString()}៛` : `$${order.grandTotal.toFixed(2)}`;
+            let cashF = currentLang === 'kh' ? `${Math.round(order.cashReceived * EXCHANGE_RATE).toLocaleString()}៛` : `$${order.cashReceived.toFixed(2)}`;
+            let changeF = currentLang === 'kh' ? `${Math.round(order.changeDue * EXCHANGE_RATE).toLocaleString()}៛` : `$${order.changeDue.toFixed(2)}`;
+
+            printArea.innerHTML = `
+                <div style="font-family: monospace; font-size: 11px; width: 100%; padding: 8px; color: black; background: white; box-sizing: border-box;">
+                    <div style="text-align: center; margin-bottom: 10px;">
+                        <h2 style="font-size: 16px; margin: 0; font-weight: bold;">RM HENG RESTO</h2>
+                        <p style="margin: 2px 0; font-size: 10px;">WhatsApp: +90878980</p>
+                        <p style="margin: 2px 0; font-size: 9px;">កាលបរិច្ឆេទ: ${new Date(order.date).toLocaleString()}</p>
+                        <p style="margin: 4px 0; border-bottom: 1px dashed black; padding-bottom: 5px;">
+                            តុ / Table: ${order.tableNo} | ID: #${order.id.substring(6,12)}
+                        </p>
+                    </div>
+
+                    <table style="width: 100%; border-collapse: collapse;">
+                        <thead>
+                            <tr style="border-bottom: 1px dashed black;">
+                                <th style="text-align: left; padding-bottom: 4px;">ឈ្មោះមុខម្ហូប / Item</th>
+                                <th style="text-align: center; padding-bottom: 4px;">Qty</th>
+                                <th style="text-align: right; padding-bottom: 4px;">តម្លៃ / Total</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${rowsHtml}
+                        </tbody>
+                    </table>
+
+                    <div style="border-top: 1px dashed black; margin-top: 5px; padding-top: 5px; line-height: 1.4;">
+                        <div style="display: flex; justify-content: space-between;">
+                            <span>Subtotal:</span>
+                            <span>${subtotalF}</span>
+                        </div>
+                        ${order.discount > 0 ? `
+                        <div style="display: flex; justify-content: space-between; color: red;">
+                            <span>Discount (${order.discount}%):</span>
+                            <span>-${currentLang === 'kh' ? `${Math.round(order.subtotal * (order.discount/100) * EXCHANGE_RATE).toLocaleString()}៛` : `$${(order.subtotal * (order.discount/100)).toFixed(2)}`}</span>
+                        </div>` : ''}
+                        <div style="display: flex; justify-content: space-between; font-weight: bold; font-size: 12px; border-top: 1px dashed black; margin-top: 4px; padding-top: 4px;">
+                            <span>សរុប / Total:</span>
+                            <span>${grandF}</span>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; margin-top: 4px;">
+                            <span>ប្រាក់ទទួល / Cash Received:</span>
+                            <span>${cashF}</span>
+                        </div>
+                        <div style="display: flex; justify-content: space-between;">
+                            <span>ប្រាក់អាប់ / Change Due:</span>
+                            <span>${changeF}</span>
+                        </div>
+                    </div>
+
+                    ${order.note ? `
+                    <div style="margin-top: 10px; border-top: 1px dashed #ccc; padding-top: 4px; font-style: italic; font-size: 9px;">
+                        ចំណាំ: ${order.note}
+                    </div>` : ''}
+
+                    <div style="text-align: center; margin-top: 20px; border-top: 1px dashed black; padding-top: 10px;">
+                        <p style="margin: 0; font-weight: bold;">សូមអរគុណសម្រាប់ការគាំទ្រ! សូមអញ្ជើញមកម្តងទៀត!</p>
+                        <p style="margin: 2px 0; font-size: 8px; color: gray;">Powered by RM HENG RESTO</p>
+                    </div>
+                </div>
+            `;
+        }
+
+        // ==========================================
+        // KITCHEN MODULE
+        // ==========================================
+        function renderKitchenGrid() {
+            const grid = document.getElementById('kitchen-orders-grid');
+            grid.innerHTML = '';
+
+            const activeOrders = sales.filter(s => s.status !== 'delivered');
+            document.getElementById('kitchen-running-count').textContent = `${activeOrders.length} Orders Running`;
+
+            activeOrders.forEach(order => {
+                const card = document.createElement('div');
+                card.className = `p-5 rounded-2xl border flex flex-col justify-between h-[360px] ${
+                    order.status === 'pending' 
+                        ? 'border-red-500/30 bg-red-500/5' 
+                        : order.status === 'cooking' 
+                            ? 'border-amber-500/30 bg-amber-500/5' 
+                            : 'border-green-500/30 bg-green-500/5'
+                }`;
+
+                let listHtml = '';
+                order.items.forEach(item => {
+                    listHtml += `
+                        <div class="flex justify-between text-xs font-semibold py-1 border-b border-dashed border-slate-700/10">
+                            <span>• ${currentLang === 'kh' ? item.nameKh : item.nameEn}</span>
+                            <span class="text-amber-500">x${item.qty}</span>
+                        </div>
+                    `;
+                });
+
+                let actionBtn = '';
+                if (order.status === 'pending') {
+                    actionBtn = `<button onclick="updateKitchenStatus('${order.id}', 'cooking')" class="w-full py-2 bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold rounded-lg transition-colors">🍳 ចាប់ផ្តើមធ្វើ (Start Cooking)</button>`;
+                } else if (order.status === 'cooking') {
+                    actionBtn = `<button onclick="updateKitchenStatus('${order.id}', 'ready')" class="w-full py-2 bg-green-500 hover:bg-green-600 text-white text-xs font-bold rounded-lg transition-colors">✅ រួចរាល់ (Set Ready)</button>`;
+                } else if (order.status === 'ready') {
+                    actionBtn = `<button onclick="updateKitchenStatus('${order.id}', 'delivered')" class="w-full py-2 bg-blue-500 hover:bg-blue-600 text-white text-xs font-bold rounded-lg transition-colors">🚀 ប្រគល់ជូន (Deliver)</button>`;
+                }
+
+                card.innerHTML = `
+                    <div>
+                        <div class="flex justify-between items-start border-b border-slate-200 dark:border-slate-800 pb-3 mb-3">
+                            <div>
+                                <span class="text-[10px] font-mono text-slate-400">ID: #${order.id.substring(6,12)}</span>
+                                <h3 class="font-bold text-base mt-1">Table: <span class="text-amber-500">${order.tableNo}</span></h3>
+                            </div>
+                            <span class="text-[10px] font-bold px-2 py-1 rounded-lg ${
+                                order.status === 'pending' ? 'bg-red-500 text-white' : order.status === 'cooking' ? 'bg-amber-500 text-white' : 'bg-green-500 text-white'
+                            }">
+                                ${translations[currentLang][order.status]}
+                            </span>
+                        </div>
+                        <div class="space-y-2 overflow-y-auto max-h-[160px] pr-1">
+                            ${listHtml}
+                        </div>
+                        ${order.note ? `<p class="text-[10px] italic text-red-400 mt-2 bg-red-400/5 p-1.5 rounded">Note: ${order.note}</p>` : ''}
+                    </div>
+                    <div class="border-t border-slate-200 dark:border-slate-800 pt-3 mt-3 flex">
+                        ${actionBtn}
+                    </div>
+                `;
+                grid.appendChild(card);
+            });
+
+            if (activeOrders.length === 0) {
+                grid.innerHTML = `
+                    <div class="col-span-full py-16 text-center text-slate-500">
+                        <span class="text-4xl">🎉</span>
+                        <p class="text-sm mt-2">No pending orders. All clear!</p>
+                    </div>
+                `;
+            }
+        }
+
+        function updateKitchenStatus(id, status) {
+            const order = sales.find(s => s.id === id);
+            if (order) {
+                order.status = status;
+                persistAndSyncData();
+                renderKitchenGrid();
+                renderReports();
+                showToast(translations[currentLang].addSuccess);
+            }
+        }
+
+        // ==========================================
+        // DASHBOARD SYSTEM
+        // ==========================================
+        function setReportFilter(filter) {
+            reportFilter = filter;
+            document.querySelectorAll('.report-filter-btn').forEach(btn => {
+                btn.className = "report-filter-btn px-3 py-1.5 rounded-lg text-xs font-bold uppercase text-slate-400";
+            });
+            document.getElementById(`filter-${filter}`).className = "report-filter-btn px-3 py-1.5 rounded-lg text-xs font-bold uppercase bg-amber-500 text-white shadow";
+            renderDashboard();
+            renderReports();
+            renderExpensesTable();
+        }
+
+        function getFilteredSales() {
+            const now = new Date();
+            return sales.filter(s => {
+                const sDate = new Date(s.date);
+                if (reportFilter === 'day') {
+                    return sDate.toDateString() === now.toDateString();
+                } else if (reportFilter === 'month') {
+                    return sDate.getMonth() === now.getMonth() && sDate.getFullYear() === now.getFullYear();
+                } else if (reportFilter === 'year') {
+                    return sDate.getFullYear() === now.getFullYear();
+                }
+                return true;
+            });
+        }
+
+        function getFilteredExpenses() {
+            const now = new Date();
+            return expenses.filter(e => {
+                const eDate = new Date(e.date);
+                if (reportFilter === 'day') {
+                    return eDate.toDateString() === now.toDateString();
+                } else if (reportFilter === 'month') {
+                    return eDate.getMonth() === now.getMonth() && eDate.getFullYear() === now.getFullYear();
+                } else if (reportFilter === 'year') {
+                    return eDate.getFullYear() === now.getFullYear();
+                }
+                return true;
+            });
+        }
+
+        function renderDashboard() {
+            const fSales = getFilteredSales();
+            const fExpenses = getFilteredExpenses();
+
+            const totalRev = fSales.reduce((sum, s) => sum + s.grandTotal, 0);
+            const totalExp = fExpenses.reduce((sum, e) => sum + e.amount, 0);
+            const netProfit = totalRev - totalExp;
+
+            document.getElementById('dash-sales').textContent = formatVal(totalRev);
+            document.getElementById('dash-trans').textContent = fSales.length;
+            document.getElementById('dash-expenses').textContent = formatVal(totalExp);
+            document.getElementById('dash-profit').textContent = formatVal(netProfit);
+        }
+
+        // ==========================================
+        // REPORTS DATABASE VIEW
+        // ==========================================
+        function renderReports() {
+            const tbody = document.getElementById('reports-table-body');
+            tbody.innerHTML = '';
+
+            const fSales = getFilteredSales();
+
+            fSales.forEach(order => {
+                const tr = document.createElement('tr');
+                tr.className = "hover:bg-slate-50 dark:hover:bg-slate-800/20";
+                
+                const itemsStr = order.items.map(i => `${currentLang === 'kh' ? i.nameKh : i.nameEn} x${i.qty}`).join(', ');
+
+                tr.innerHTML = `
+                    <td class="p-4 font-mono font-bold text-amber-500">#${order.id.substring(6,12)}</td>
+                    <td class="p-4">${new Date(order.date).toLocaleString()}</td>
+                    <td class="p-4 font-bold">Table ${order.tableNo}</td>
+                    <td class="p-4">
+                        <span class="font-bold">${order.items.reduce((sum, i) => sum + i.qty, 0)} Items</span>
+                        <p class="text-[10px] text-slate-400 italic line-clamp-1">${itemsStr}</p>
+                    </td>
+                    <td class="p-4 text-red-500">-${order.discount}%</td>
+                    <td class="p-4 font-extrabold text-slate-900 dark:text-white text-sm">${formatVal(order.grandTotal)}</td>
+                    <td class="p-4">
+                        <span class="px-2 py-0.5 rounded-full text-[9px] font-bold uppercase ${
+                            order.status === 'delivered' ? 'bg-green-500/10 text-green-500' : 'bg-amber-500/10 text-amber-500'
+                        }">
+                            ${translations[currentLang][order.status]}
+                        </span>
+                    </td>
+                    <td class="p-4 text-center">
+                        <button onclick="reprintOrderReceipt('${order.id}')" class="px-2.5 py-1 bg-amber-500/10 hover:bg-amber-500 text-amber-500 hover:text-white rounded-lg font-bold transition-all">🖨️ ${translations[currentLang].printReceipt}</button>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+
+            if (fSales.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="8" class="p-8 text-center text-slate-500">${translations[currentLang].noData}</td></tr>`;
+            }
+        }
+
+        function reprintOrderReceipt(id) {
+            const order = sales.find(s => s.id === id);
+            if (order) {
+                generatePrintReceipt(order);
+                setTimeout(() => {
+                    window.print();
+                }, 150);
+            }
+        }
+
+        // ==========================================
+        // EXPENSES MODULE
+        // ==========================================
+        function renderExpensesTable() {
+            const tbody = document.getElementById('expenses-table-body');
+            tbody.innerHTML = '';
+
+            const fExpenses = getFilteredExpenses();
+
+            fExpenses.forEach(exp => {
+                const tr = document.createElement('tr');
+                tr.className = "hover:bg-slate-50 dark:hover:bg-slate-800/20";
+                tr.innerHTML = `
+                    <td class="p-4">${new Date(exp.date).toLocaleDateString()}</td>
+                    <td class="p-4 font-bold">${exp.description}</td>
+                    <td class="p-4 font-extrabold text-red-400 text-sm">${formatVal(exp.amount)}</td>
+                    <td class="p-4 text-center">
+                        <button onclick="deleteExpense('${exp.id}')" class="p-1 hover:bg-red-500/10 text-red-500 rounded">🗑️</button>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+
+            if (fExpenses.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="4" class="p-8 text-center text-slate-500">${translations[currentLang].noData}</td></tr>`;
+            }
+        }
+
+        function openExpenseModal() {
+            document.getElementById('expense-desc-input').value = '';
+            document.getElementById('expense-amount-input').value = '';
+            document.getElementById('expense-date-input').value = new Date().toISOString().split('T')[0];
+            document.getElementById('expense-modal').classList.remove('hidden');
+        }
+
+        function closeExpenseModal() {
+            document.getElementById('expense-modal').classList.add('hidden');
+        }
+
+        function saveExpense() {
+            const desc = document.getElementById('expense-desc-input').value;
+            const amt = parseFloat(document.getElementById('expense-amount-input').value);
+            const date = document.getElementById('expense-date-input').value;
+
+            if (!desc || !amt) {
+                showToast(translations[currentLang].validationError);
+                return;
+            }
+
+            const exp = {
+                id: 'exp_' + Date.now(),
+                description: desc,
+                amount: amt,
+                date: date
+            };
+
+            expenses.unshift(exp);
+            persistAndSyncData();
+            
+            renderExpensesTable();
+            renderDashboard();
+            closeExpenseModal();
+            showToast(translations[currentLang].addSuccess);
+        }
+
+        function deleteExpense(id) {
+            if (confirm(translations[currentLang].deleteConfirm)) {
+                expenses = expenses.filter(e => e.id !== id);
+                persistAndSyncData();
+                renderExpensesTable();
+                renderDashboard();
+                showToast(translations[currentLang].deleteSuccess);
+            }
+        }
+
+        // ==========================================
+        // DISHES CATALOG MENU
+        // ==========================================
+        function renderMenuGrid() {
+            const grid = document.getElementById('menu-items-grid');
+            grid.innerHTML = '';
+
+            menuItems.forEach(dish => {
+                const card = document.createElement('div');
+                card.className = "p-5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex flex-col justify-between h-44";
+                card.innerHTML = `
+                    <div>
+                        <div class="flex justify-between items-start">
+                            <span class="text-[10px] font-bold uppercase px-2 py-0.5 rounded ${
+                                dish.category === 'food' ? 'bg-red-500/10 text-red-500' : dish.category === 'drink' ? 'bg-blue-500/10 text-blue-500' : 'bg-purple-500/10 text-purple-500'
+                            }">
+                                ${translations[currentLang][dish.category]}
+                            </span>
+                            <span class="text-[9px] font-extrabold px-1.5 rounded ${dish.available ? 'bg-emerald-500/10 text-emerald-500' : 'bg-rose-500/10 text-rose-500'}">
+                                ${dish.available ? translations[currentLang].available : translations[currentLang].unavailable}
+                            </span>
+                        </div>
+                        <h3 class="font-bold text-base mt-3">${currentLang === 'kh' ? dish.nameKh : dish.nameEn}</h3>
+                        <p class="text-xs text-slate-400">${currentLang === 'kh' ? dish.nameEn : dish.nameKh}</p>
+                    </div>
+                    <div class="flex justify-between items-center border-t border-slate-100 dark:border-slate-800 pt-3 mt-3">
+                        <span class="font-extrabold text-amber-500 text-lg">${formatVal(dish.price)}</span>
+                        <div class="flex space-x-2">
+                            <button onclick="editMenuItem('${dish.id}')" class="p-1.5 hover:bg-amber-500/10 text-amber-500 rounded">✏️</button>
+                            <button onclick="deleteMenuItem('${dish.id}')" class="p-1.5 hover:bg-rose-500/10 text-rose-500 rounded">🗑️</button>
+                        </div>
+                    </div>
+                `;
+                grid.appendChild(card);
+            });
+        }
+
+        function openMenuModal() {
+            document.getElementById('dish-id-input').value = '';
+            document.getElementById('dish-namekh-input').value = '';
+            document.getElementById('dish-nameen-input').value = '';
+            document.getElementById('dish-price-input').value = '';
+            document.getElementById('dish-cat-input').value = 'food';
+            document.getElementById('dish-available-input').checked = true;
+            document.getElementById('dish-modal-title').textContent = translations[currentLang].addDish;
+            document.getElementById('dish-modal').classList.remove('hidden');
+        }
+
+        function closeMenuModal() {
+            document.getElementById('dish-modal').classList.add('hidden');
+        }
+
+        function saveMenuItem() {
+            const id = document.getElementById('dish-id-input').value;
+            const kh = document.getElementById('dish-namekh-input').value;
+            const en = document.getElementById('dish-nameen-input').value;
+            const price = parseFloat(document.getElementById('dish-price-input').value);
+            const cat = document.getElementById('dish-cat-input').value;
+            const avail = document.getElementById('dish-available-input').checked;
+
+            if (!kh || !en || !price) {
+                showToast(translations[currentLang].validationError);
+                return;
+            }
+
+            if (id) {
+                // Edit
+                menuItems = menuItems.map(m => m.id === id ? { id, nameKh: kh, nameEn: en, price, category: cat, available: avail } : m);
+            } else {
+                // Add
+                menuItems.push({
+                    id: 'dish_' + Date.now(),
+                    nameKh: kh,
+                    nameEn: en,
+                    price: price,
+                    category: cat,
+                    available: avail
+                });
+            }
+
+            persistAndSyncData();
+            renderMenuGrid();
+            renderFoodGrid();
+            closeMenuModal();
+            showToast(translations[currentLang].addSuccess);
+        }
+
+        function editMenuItem(id) {
+            const item = menuItems.find(m => m.id === id);
+            if (item) {
+                document.getElementById('dish-id-input').value = item.id;
+                document.getElementById('dish-namekh-input').value = item.nameKh;
+                document.getElementById('dish-nameen-input').value = item.nameEn;
+                document.getElementById('dish-price-input').value = item.price;
+                document.getElementById('dish-cat-input').value = item.category;
+                document.getElementById('dish-available-input').checked = item.available;
+                document.getElementById('dish-modal-title').textContent = translations[currentLang].editDish;
+                document.getElementById('dish-modal').classList.remove('hidden');
+            }
+        }
+
+        function deleteMenuItem(id) {
+            if (confirm(translations[currentLang].deleteConfirm)) {
+                menuItems = menuItems.filter(m => m.id !== id);
+                persistAndSyncData();
+                renderMenuGrid();
+                renderFoodGrid();
+                showToast(translations[currentLang].deleteSuccess);
+            }
+        }
+
+        // Run application on start
+        window.onload = () => {
+            initApp().catch(() => {
+                setSyncStatus('Init Error', 'error');
+            });
+        };
+    </script>
+</body>
+</html>
