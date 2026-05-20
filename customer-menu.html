@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="km">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>RM HENG RESTO - Menu Order</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Kantumruy+Pro:wght@300;400;600;700&display=swap" rel="stylesheet">
+  <style>
+    body { font-family: "Kantumruy Pro", sans-serif; }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-800">
+  <div class="max-w-5xl mx-auto p-4 md:p-6">
+    <header class="mb-5">
+      <h1 class="text-2xl md:text-3xl font-black text-amber-600">RM HENG RESTO</h1>
+      <p class="text-sm text-slate-500">ជ្រើសមុខម្ហូប ហើយផ្ញើកម្មង់តាម WhatsApp</p>
+    </header>
+
+    <section class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+      <div class="lg:col-span-2">
+        <div class="rounded-2xl bg-white border border-slate-200 p-4 mb-4">
+          <div class="flex gap-2 flex-wrap">
+            <button class="cat-btn px-3 py-1.5 rounded-lg text-sm font-bold bg-amber-500 text-white" data-cat="all">ទាំងអស់</button>
+            <button class="cat-btn px-3 py-1.5 rounded-lg text-sm font-bold bg-slate-100" data-cat="food">អាហារ</button>
+            <button class="cat-btn px-3 py-1.5 rounded-lg text-sm font-bold bg-slate-100" data-cat="drink">ភេសជ្ជៈ</button>
+            <button class="cat-btn px-3 py-1.5 rounded-lg text-sm font-bold bg-slate-100" data-cat="dessert">បង្អែម</button>
+          </div>
+        </div>
+
+        <div id="menu-grid" class="grid grid-cols-1 sm:grid-cols-2 gap-3"></div>
+      </div>
+
+      <aside class="rounded-2xl bg-white border border-slate-200 p-4 h-fit lg:sticky lg:top-4">
+        <h2 class="font-black text-lg mb-3">កម្មង់របស់អ្នក</h2>
+        <div class="space-y-3 mb-3">
+          <input id="customer-name" class="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm" placeholder="ឈ្មោះអតិថិជន" />
+          <input id="table-no" class="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm" placeholder="លេខតុ / Delivery Address" />
+          <textarea id="order-note" rows="2" class="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm" placeholder="ចំណាំបន្ថែម..."></textarea>
+        </div>
+        <div id="cart-list" class="space-y-2 max-h-64 overflow-auto pr-1"></div>
+        <div class="border-t pt-3 mt-3">
+          <div class="flex justify-between text-sm mb-2">
+            <span class="text-slate-500">សរុប</span>
+            <span id="grand-total" class="font-black text-amber-600">$0.00</span>
+          </div>
+          <button id="wa-order-btn" class="w-full py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white font-bold text-sm">
+            ផ្ញើកម្មង់តាម WhatsApp
+          </button>
+        </div>
+      </aside>
+    </section>
+  </div>
+
+  <script>
+    const STORE = {
+      name: "RM HENG RESTO",
+      phone: "85590878980",
+      currency: "$",
+      supabaseUrl: "https://cieiyeaendzkljfyrlqx.supabase.co",
+      supabaseAnonKey: "sb_publishable_IdV_G8wR0-U1ScMyYMp-_g_JAu2-P8a",
+      tableName: "rm_pos_sync",
+      storeId: "main-store"
+    };
+
+    const fallbackMenu = [
+      { id: "m1", nameKh: "បាយសាច់ជ្រូក", nameEn: "Pork Rice", price: 1.5, category: "food", available: true },
+      { id: "m2", nameKh: "ឡុកឡាក់សាច់គោ", nameEn: "Beef Lok Lak", price: 3.5, category: "food", available: true },
+      { id: "m3", nameKh: "គុយទាវសាច់ជ្រូក", nameEn: "Pork Noodle Soup", price: 2.5, category: "food", available: true },
+      { id: "m4", nameKh: "កាហ្វេទឹកដោះគោទឹកកក", nameEn: "Iced Milk Coffee", price: 1.25, category: "drink", available: true },
+      { id: "m5", nameKh: "តែបៃតងក្រូចឆ្មារ", nameEn: "Lemon Green Tea", price: 1.25, category: "drink", available: true },
+      { id: "m6", nameKh: "ផ្លែឈើស្រស់", nameEn: "Fresh Fruits Slice", price: 1.5, category: "dessert", available: true }
+    ];
+
+    let menuItems = [];
+    let cart = [];
+    let activeCategory = "all";
+
+    function formatMoney(v) {
+      return `${STORE.currency}${v.toFixed(2)}`;
+    }
+
+    function getName(item) {
+      return item.nameKh || item.nameEn || "Item";
+    }
+
+    function renderMenu() {
+      const grid = document.getElementById("menu-grid");
+      const data = menuItems.filter(i => i.available !== false)
+        .filter(i => activeCategory === "all" ? true : i.category === activeCategory);
+
+      grid.innerHTML = data.map(item => `
+        <div class="rounded-2xl border border-slate-200 bg-white p-4">
+          <div class="flex justify-between items-start gap-2">
+            <div>
+              <h3 class="font-black text-base">${getName(item)}</h3>
+              <p class="text-xs text-slate-400">${item.nameEn || ""}</p>
+            </div>
+            <span class="text-amber-600 font-black">${formatMoney(Number(item.price || 0))}</span>
+          </div>
+          <button onclick="addToCart('${item.id}')" class="mt-3 w-full py-2 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-sm font-bold">បន្ថែម</button>
+        </div>
+      `).join("");
+    }
+
+    function renderCart() {
+      const list = document.getElementById("cart-list");
+      if (!cart.length) {
+        list.innerHTML = '<p class="text-sm text-slate-400">មិនទាន់មាន item</p>';
+      } else {
+        list.innerHTML = cart.map(c => `
+          <div class="border border-slate-200 rounded-xl p-2.5">
+            <div class="flex justify-between items-center mb-2">
+              <span class="font-bold text-sm">${getName(c)}</span>
+              <span class="font-black text-amber-600 text-sm">${formatMoney(c.price * c.qty)}</span>
+            </div>
+            <div class="flex items-center gap-2">
+              <button onclick="decQty('${c.id}')" class="w-7 h-7 rounded bg-slate-100 font-bold">-</button>
+              <span class="text-sm font-bold min-w-6 text-center">${c.qty}</span>
+              <button onclick="incQty('${c.id}')" class="w-7 h-7 rounded bg-slate-100 font-bold">+</button>
+              <button onclick="removeItem('${c.id}')" class="ml-auto text-xs text-rose-500 font-bold">Remove</button>
+            </div>
+          </div>
+        `).join("");
+      }
+
+      const total = cart.reduce((s, i) => s + (i.price * i.qty), 0);
+      document.getElementById("grand-total").textContent = formatMoney(total);
+    }
+
+    function addToCart(id) {
+      const item = menuItems.find(m => m.id === id);
+      if (!item) return;
+      const found = cart.find(c => c.id === id);
+      if (found) found.qty += 1;
+      else cart.push({ ...item, qty: 1 });
+      renderCart();
+    }
+
+    function incQty(id) {
+      const found = cart.find(c => c.id === id);
+      if (!found) return;
+      found.qty += 1;
+      renderCart();
+    }
+
+    function decQty(id) {
+      const found = cart.find(c => c.id === id);
+      if (!found) return;
+      found.qty -= 1;
+      if (found.qty <= 0) {
+        cart = cart.filter(c => c.id !== id);
+      }
+      renderCart();
+    }
+
+    function removeItem(id) {
+      cart = cart.filter(c => c.id !== id);
+      renderCart();
+    }
+
+    function setupCategories() {
+      document.querySelectorAll(".cat-btn").forEach(btn => {
+        btn.addEventListener("click", () => {
+          activeCategory = btn.dataset.cat;
+          document.querySelectorAll(".cat-btn").forEach(b => b.className = "cat-btn px-3 py-1.5 rounded-lg text-sm font-bold bg-slate-100");
+          btn.className = "cat-btn px-3 py-1.5 rounded-lg text-sm font-bold bg-amber-500 text-white";
+          renderMenu();
+        });
+      });
+    }
+
+    async function loadMenuFromCloud() {
+      try {
+        const sb = window.supabase.createClient(STORE.supabaseUrl, STORE.supabaseAnonKey);
+        const { data, error } = await sb
+          .from(STORE.tableName)
+          .select("menu_items")
+          .eq("store_id", STORE.storeId)
+          .maybeSingle();
+
+        if (error) throw error;
+        if (data && Array.isArray(data.menu_items) && data.menu_items.length) {
+          menuItems = data.menu_items;
+        } else {
+          menuItems = fallbackMenu;
+        }
+      } catch (_) {
+        menuItems = fallbackMenu;
+      }
+    }
+
+    function buildWhatsAppMessage() {
+      const name = (document.getElementById("customer-name").value || "").trim();
+      const tableNo = (document.getElementById("table-no").value || "").trim();
+      const note = (document.getElementById("order-note").value || "").trim();
+      const total = cart.reduce((s, i) => s + (i.price * i.qty), 0);
+
+      let msg = `សួស្តី ${STORE.name}%0A`;
+      msg += `ខ្ញុំសូមកម្មង់មុខម្ហូប:%0A`;
+      cart.forEach((c, idx) => {
+        msg += `${idx + 1}. ${encodeURIComponent(getName(c))} x${c.qty} = ${encodeURIComponent(formatMoney(c.price * c.qty))}%0A`;
+      });
+      msg += `%0Aសរុប: ${encodeURIComponent(formatMoney(total))}%0A`;
+      if (name) msg += `ឈ្មោះ: ${encodeURIComponent(name)}%0A`;
+      if (tableNo) msg += `តុ/អាសយដ្ឋាន: ${encodeURIComponent(tableNo)}%0A`;
+      if (note) msg += `ចំណាំ: ${encodeURIComponent(note)}%0A`;
+      return msg;
+    }
+
+    function submitToWhatsApp() {
+      if (!cart.length) {
+        alert("សូមជ្រើសមុខម្ហូបជាមុនសិន");
+        return;
+      }
+      const text = buildWhatsAppMessage();
+      window.open(`https://wa.me/${STORE.phone}?text=${text}`, "_blank");
+      cart = [];
+      document.getElementById("customer-name").value = "";
+      document.getElementById("table-no").value = "";
+      document.getElementById("order-note").value = "";
+      renderCart();
+    }
+
+    async function init() {
+      await loadMenuFromCloud();
+      setupCategories();
+      renderMenu();
+      renderCart();
+      document.getElementById("wa-order-btn").addEventListener("click", submitToWhatsApp);
+
+      setInterval(async () => {
+        await loadMenuFromCloud();
+        renderMenu();
+      }, 12000);
+    }
+
+    window.addToCart = addToCart;
+    window.incQty = incQty;
+    window.decQty = decQty;
+    window.removeItem = removeItem;
+    window.onload = init;
+  </script>
+</body>
+</html>
